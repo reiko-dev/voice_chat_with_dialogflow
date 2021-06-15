@@ -14,11 +14,14 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sound_stream/sound_stream.dart';
 import 'package:voice_chat_with_dialogflow/chat_message.dart';
 
-// TODO import Dialogflow
+import 'package:dialogflow_grpc/dialogflow_grpc.dart';
+import 'package:dialogflow_grpc/generated/google/cloud/dialogflow/v2beta1/session.pb.dart';
+
 class Chat extends StatefulWidget {
   Chat({Key key}) : super(key: key);
 
@@ -37,7 +40,7 @@ class _ChatState extends State<Chat> {
   StreamSubscription<List<int>> _audioStreamSubscription;
   BehaviorSubject<List<int>> _audioStream;
 
-  // TODO DialogflowGrpc class instance
+  DialogflowGrpcV2Beta1 dialogflow;
 
   @override
   void initState() {
@@ -63,7 +66,10 @@ class _ChatState extends State<Chat> {
 
     await Future.wait([_recorder.initialize()]);
 
-    // TODO Get a Service account
+    final serviceAccount = ServiceAccount.fromString(
+      '${await rootBundle.loadString('assets/credentials.json')}',
+    );
+    dialogflow = DialogflowGrpcV2Beta1.viaServiceAccount(serviceAccount);
   }
 
   void stopStream() async {
@@ -76,7 +82,33 @@ class _ChatState extends State<Chat> {
     print(text);
     _textController.clear();
 
-    //TODO Dialogflow Code
+    ChatMessage message = ChatMessage(
+      text: text,
+      name: "You",
+      type: true,
+    );
+
+    setState(() {
+      _messages.insert(0, message);
+    });
+
+    DetectIntentResponse data = await dialogflow.detectIntent(text, 'en-US');
+
+    String fulfillmentText = data.queryResult.fulfillmentText;
+
+    print('Action: ' + data.queryResult.action);
+
+    if (fulfillmentText.isNotEmpty) {
+      ChatMessage botMessage = ChatMessage(
+        text: fulfillmentText,
+        name: "Bot",
+        type: false,
+      );
+
+      setState(() {
+        _messages.insert(0, botMessage);
+      });
+    }
   }
 
   void handleStream() async {
@@ -84,15 +116,66 @@ class _ChatState extends State<Chat> {
 
     _audioStream = BehaviorSubject<List<int>>();
     _audioStreamSubscription = _recorder.audioStream.listen((data) {
-      print(data);
+      // print(data);
       _audioStream.add(data);
     });
 
-    // TODO Create SpeechContexts
-    // Create an audio InputConfig
+    var biasList = SpeechContextV2Beta1(phrases: [
+      'Dialogflow CX',
+      'Dialogflow Essentials',
+      'Action Builder',
+      'HIPAA'
+          'Reiko'
+    ], boost: 20.0);
 
-    // TODO Make the streamingDetectIntent call, with the InputConfig and the audioStream
-    // TODO Get the transcript and detectedIntent and show on screen
+    // Create an audio InputConfig
+    // See: https://cloud.google.com/dialogflow/es/docs/reference/rpc/google.cloud.dialogflow.v2#google.cloud.dialogflow.v2.InputAudioConfig
+    var config = InputConfigV2beta1(
+      encoding: 'AUDIO_ENCODING_LINEAR_16',
+      languageCode: 'en-US',
+      sampleRateHertz: 16000,
+      singleUtterance: false,
+      speechContexts: [biasList],
+    );
+
+    final responseStream =
+        dialogflow.streamingDetectIntent(config, _audioStream);
+
+    // Get the transcript and detectedIntent and show on screen
+    responseStream.listen((data) {
+      //print('----');
+      setState(() {
+        //print(data);
+        String transcript = data.recognitionResult.transcript;
+        String queryText = data.queryResult.queryText;
+        String fulfillmentText = data.queryResult.fulfillmentText;
+
+        if (fulfillmentText.isNotEmpty) {
+          var message = ChatMessage(
+            text: queryText,
+            name: "You",
+            type: true,
+          );
+
+          var botMessage = ChatMessage(
+            text: fulfillmentText,
+            name: "Bot",
+            type: false,
+          );
+
+          _messages.insert(0, message);
+          _textController.clear();
+          _messages.insert(0, botMessage);
+        }
+        if (transcript.isNotEmpty) {
+          _textController.text = transcript;
+        }
+      });
+    }, onError: (e) {
+      //print(e);
+    }, onDone: () {
+      //print('done');
+    });
   }
 
   // The chat interface
