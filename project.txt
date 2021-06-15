@@ -1,0 +1,12 @@
+Add credentials.json to your gitignore.
+
+Dialogflow ES is a development suite for building conversational UIs.
+ To create a chatbot for mobile devices, you'll have to create a custom integration. 
+ You'll create intents by specifying training phrases to train an underlying machine learning model.
+
+ Why not to use just the Google Assinst?
+ Because the google assistant can be an overkill as a solution for your app/system.
+ If you're just interested in a bank related things voice bot why use a google assistant that provides info like recipes, weather and other things?
+ It's an overkill in this case.
+
+
